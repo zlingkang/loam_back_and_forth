@@ -7,6 +7,7 @@
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <std_msgs/Empty.h>
 
 #include <tf/transform_datatypes.h>
 #include <tf/transform_broadcaster.h>
@@ -38,7 +39,7 @@ int laserRotDir = 1;
 float laserAngleLast = 0;
 float laserAngleCur = 0;
 
-int skipFrameNum = 3;
+int skipFrameNum = 0;
 int skipFrameCount = 0;
 
 pcl::PointCloud<pcl::PointXYZHSV>::Ptr laserCloudExtreCur(new pcl::PointCloud<pcl::PointXYZHSV>());
@@ -85,6 +86,8 @@ float imuVeloZ[imuQueLength] = {0};
 float imuShiftX[imuQueLength] = {0};
 float imuShiftY[imuQueLength] = {0};
 float imuShiftZ[imuQueLength] = {0};
+
+bool newSweep = false;
 
 void ShiftToStartIMU()
 {
@@ -183,6 +186,8 @@ void AccumulateIMUShift()
 
 void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudIn2)
 {
+  std::cout << "[LOAM] Handling laser cloud" << std::endl;
+
   if (!systemInited) {
     initTime = laserCloudIn2->header.stamp.toSec();
     imuPointerFront = (imuPointerLast + 1) % imuQueLength;
@@ -206,11 +211,11 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudIn2)
     cloudSortInd[i] = i;
     cloudNeighborPicked[i] = 0;
   }
-
+/*
   bool newSweep = false;
   laserAngleLast = laserAngleCur;
-  laserAngleCur = atan2(laserCloud->points[cloudSize - 1].y - laserCloud->points[0].y, 
-                        laserCloud->points[cloudSize - 1].x - laserCloud->points[0].x);
+  laserAngleCur = atan2(laserCloud->points[cloudSize - 1].x - laserCloud->points[0].x, 
+                        laserCloud->points[cloudSize - 1].y - laserCloud->points[0].y);
 
   if (laserAngleLast > 0 && laserRotDir == 1 && laserAngleCur < laserAngleLast) {
     laserRotDir = -1;
@@ -219,8 +224,10 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudIn2)
     laserRotDir = 1;
     newSweep = true;
   }
-
+*/
   if (newSweep) {
+    newSweep = false;
+    std::cout << "[LOAM] New Sweep" << std::endl;
     timeStart = timeScanLast - initTime;
 
     pcl::PointCloud<pcl::PointXYZHSV>::Ptr imuTrans(new pcl::PointCloud<pcl::PointXYZHSV>(4, 1));
@@ -612,6 +619,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudIn2)
     imuTrans->clear();
 
     pubLaserCloudLastPointer->publish(laserCloudLast2);
+    
+    std::cout << "[LOAM] publish laser cloud last" << std::endl;
 
     //ROS_INFO ("%d %d", laserCloudLast2.width, laserCloudExtreCur2.width);
   }
@@ -642,6 +651,11 @@ void imuHandler(const sensor_msgs::Imu::ConstPtr& imuIn)
   AccumulateIMUShift();
 }
 
+void sweepHandler(const std_msgs::Empty::ConstPtr& empty)
+{
+  newSweep = true;
+}
+
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "scanRegistration");
@@ -651,7 +665,10 @@ int main(int argc, char** argv)
                                   ("/sync_scan_cloud_filtered", 2, laserCloudHandler);
 
   ros::Subscriber subImu = nh.subscribe<sensor_msgs::Imu> 
-                           ("/imu/data", 5, imuHandler);
+                           ("/imu/daata", 5, imuHandler);
+
+  ros::Subscriber subSweep = nh.subscribe<std_msgs::Empty>
+                             ("/new_sweep", 5, sweepHandler);
 
   ros::Publisher pubLaserCloudExtreCur = nh.advertise<sensor_msgs::PointCloud2> 
                                          ("/laser_cloud_extre_cur", 2);
